@@ -11,25 +11,8 @@ import logging.handlers
 import subprocess
 import os
 
-logging.basicConfig(filename='web-camera.log', encoding='utf-8', level=logging.DEBUG)
-
-def parse_cli():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-i", "--interface", type=str, default="127.0.0.1", help="Interface to bind server to.")
-    parser.add_argument("-p", "--port", type=int, default=0, help="Server port.")
-    options = parser.parse_args()
-    return options
-
-
-def get_open_port():
-    """ Get an open port on the system. """
-    import socket
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.bind(("", 0))
-    s.listen(1)
-    port = s.getsockname()[1]
-    s.close()
-    return port
+logging.basicConfig(filename='web-camera.log',
+                    encoding='utf-8', level=logging.DEBUG)
 
 
 def main():
@@ -37,7 +20,7 @@ def main():
     options = parse_cli()
     if options.port == 0:
         options.port = get_open_port()
-    
+
     port = options.port
     interface = options.interface
     webroot = "vdo.ninja"
@@ -45,9 +28,9 @@ def main():
     certfile, keyfile = generate_certificates(interface)
 
     streamid = "asdjkhadg"
-    camera_link = f"https://{interface}:{port}/?push={streamid}"
-    view_link = f"https://{interface}:{port}/?view={streamid}"
 
+    camera_link = f"https://{interface}:{port}/?push={streamid}&webcam&quality=0&autostart&device=1&muted"
+    view_link = f"https://{interface}:{port}/?view={streamid}"
 
     print("Scan this code with your smartphone and accept the self-signed certificate.")
     print_qrcode(camera_link)
@@ -63,11 +46,13 @@ def main():
     server.sprint = server_logger.info
 
     print("CTRL^C to exit")
-    start_https_server(interface, port, webroot, certfile=certfile, keyfile=keyfile)
+    start_https_server(interface, port, webroot, certfile=certfile,
+                       keyfile=keyfile)
+
 
 def generate_certificates(interface):
     """ Generate ssl certificates using mkcert
-    
+
     Parameters
     ----------
     interface: str
@@ -89,7 +74,7 @@ def generate_certificates(interface):
 
 def print_qrcode(s):
     """ Print a qr code.
-    
+
     Parameters
     ----------
     s: str
@@ -103,8 +88,9 @@ def print_qrcode(s):
     print(f.read())
 
 
-def start_https_server(interface, port, webroot, certfile=None, keyfile=None):
-    logging.info(f"Starting server on interface '{interface}' port '{port}' with webroot '{webroot} using certfile '{certfile}' and keyfile '{keyfile}'")
+def start_https_server(interface, port, webroot, certfile=None, keyfile=None, username=None, password=None):
+    logging.info(
+        f"Starting server on interface '{interface}' port '{port}' with webroot '{webroot} using certfile '{certfile}' and keyfile '{keyfile}'")
     settings = dict(
         interface=interface,
         port=port,
@@ -114,11 +100,31 @@ def start_https_server(interface, port, webroot, certfile=None, keyfile=None):
         certfile=certfile,
         keyfile=keyfile,
         generate=False,
-        basic_username=None,
-        basic_password=None,
+        basic_username=username,
+        basic_password=password,
         enable_b64=False)
     server.run_server(**settings)
 
+
+def parse_cli():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-i", "--interface", type=str,
+                        default="127.0.0.1", help="Interface to bind server to.")
+    parser.add_argument("-p", "--port", type=int,
+                        default=0, help="Server port.")
+    options = parser.parse_args()
+    return options
+
+
+def get_open_port():
+    """ Get an open port on the system. """
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(("", 0))
+    s.listen(1)
+    port = s.getsockname()[1]
+    s.close()
+    return port
 
 
 if __name__ == "__main__":
