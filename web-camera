@@ -11,7 +11,10 @@ import logging.handlers
 import subprocess
 import os
 
-logging.basicConfig(filename='web-camera.log',
+source_dir = os.path.dirname(os.path.abspath(__file__))
+
+
+logging.basicConfig(filename=f'{source_dir}/web-camera.log',
                     encoding='utf-8', level=logging.DEBUG)
 
 
@@ -23,21 +26,22 @@ def main():
 
     port = options.port
     interface = options.interface
-    webroot = "vdo.ninja"
+    webroot = f"{source_dir}/vdo.ninja"
 
     certfile, keyfile = generate_certificates(interface)
 
     streamid = "asdjkhadg"
 
-    camera_link = f"https://{interface}:{port}/?push={streamid}&webcam&quality=0&autostart&device=1&muted"
+    camera_link = f"https://{interface}:{port}/?push={streamid}&webcam"
     view_link = f"https://{interface}:{port}/?view={streamid}"
 
-    print("Scan this code with your smartphone and accept the self-signed certificate.")
-    print_qrcode(camera_link)
     print(f"To add a camera: {camera_link}")
     print(f"To view the camera: {view_link}")
+    print("CTRL^C to exit")
+    print("Scan this code with your smartphone and accept the self-signed certificate.")
+    print_qrcode(camera_link)
 
-    handler = logging.handlers.WatchedFileHandler("server.log")
+    handler = logging.handlers.WatchedFileHandler(f"{source_dir}/server.log")
     server_logger = logging.getLogger("server")
     server_logger.addHandler(handler)
 
@@ -45,7 +49,6 @@ def main():
     server.CorsHandler.log_message = server_logger.info
     server.sprint = server_logger.info
 
-    print("CTRL^C to exit")
     start_https_server(interface, port, webroot, certfile=certfile,
                        keyfile=keyfile)
 
@@ -64,10 +67,10 @@ def generate_certificates(interface):
         Path to the certification and key file.
     """
     logging.info(f"Generating certificates for domain {interface}")
-    certfile = f"ssl/{interface}.pem"
-    keyfile = f"ssl/{interface}-key.pem"
+    certfile = f"{source_dir}/ssl/{interface}.pem"
+    keyfile = f"{source_dir}/ssl/{interface}-key.pem"
     if not (os.path.exists(certfile) and os.path.exists(keyfile)):
-        os.makedirs("ssl", exist_ok=True)
+        os.makedirs(f"{source_dir}/ssl", exist_ok=True)
         subprocess.run(["mkcert", interface], cwd="ssl")
     return certfile, keyfile
 
