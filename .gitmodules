@@ -1,0 +1,6 @@
+[submodule "vdo.ninja"]
+	path = vdo.ninja
+	url = https://github.com/steveseguin/vdo.ninja
+[submodule "simple_https_server"]
+	path = simple_https_server
+	url = https://github.com/arch4ngel/simple_https_server
