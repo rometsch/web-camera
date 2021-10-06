@@ -2,42 +2,47 @@
 
 import argparse
 from http import server
-from pathlib import Path
-from simple_https_server.server import ArgumentError, sprint, generate_certificate, run_server, CorsHandler
+import simple_https_server.server as server
 import io
 import qrcode
 
 import logging
 import logging.handlers
+import subprocess
+import os
 
-import contextlib
+logging.basicConfig(filename='web-camera.log', encoding='utf-8', level=logging.DEBUG)
 
-class OutputLogger:
-    def __init__(self, logger, level="INFO"):
-        self.logger = logger
-        self.name = self.logger.name
-        self.level = getattr(logging, level)
-        self._redirector = contextlib.redirect_stderr(self)
+def parse_cli():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-i", "--interface", type=str, default="127.0.0.1", help="Interface to bind server to.")
+    parser.add_argument("-p", "--port", type=int, default=0, help="Server port.")
+    options = parser.parse_args()
+    return options
 
-    def write(self, msg):
-        if msg and not msg.isspace():
-            self.logger.log(self.level, msg)
 
-    def flush(self): pass
+def get_open_port():
+    """ Get an open port on the system. """
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(("", 0))
+    s.listen(1)
+    port = s.getsockname()[1]
+    s.close()
+    return port
 
-    def __enter__(self):
-        self._redirector.__enter__()
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        # let contextlib do any exception handling here
-        self._redirector.__exit__(exc_type, exc_value, traceback)
 
 def main():
+
+    options = parse_cli()
+    if options.port == 0:
+        options.port = get_open_port()
     
-    port = 8000
-    interface = "127.0.0.1"
+    port = options.port
+    interface = options.interface
     webroot = "vdo.ninja"
+
+    certfile, keyfile = generate_certificates(interface)
 
     streamid = "asdjkhadg"
     camera_link = f"https://{interface}:{port}/?push={streamid}"
@@ -54,14 +59,42 @@ def main():
     server_logger.addHandler(handler)
 
     # patch https server's log_message function
-    CorsHandler.log_message = server_logger.info
+    server.CorsHandler.log_message = server_logger.info
+    server.sprint = server_logger.info
 
-    with OutputLogger(server_logger, "INFO") as redirector:
-        start_https_server(interface, port, webroot)
+    print("CTRL^C to exit")
+    start_https_server(interface, port, webroot, certfile=certfile, keyfile=keyfile)
+
+def generate_certificates(interface):
+    """ Generate ssl certificates using mkcert
+    
+    Parameters
+    ----------
+    interface: str
+        Name of the domain/interface to generate the certificate for.
+
+    Returns
+    -------
+    (certfile: str, keyfile: str)
+        Path to the certification and key file.
+    """
+    logging.info(f"Generating certificates for domain {interface}")
+    certfile = f"ssl/{interface}.pem"
+    keyfile = f"ssl/{interface}-key.pem"
+    if not (os.path.exists(certfile) and os.path.exists(keyfile)):
+        os.makedirs("ssl", exist_ok=True)
+        subprocess.run(["mkcert", interface], cwd="ssl")
+    return certfile, keyfile
 
 
 def print_qrcode(s):
-
+    """ Print a qr code.
+    
+    Parameters
+    ----------
+    s: str
+        Text to be encoded.
+    """
     qr = qrcode.QRCode()
     qr.add_data(s)
     f = io.StringIO()
@@ -69,107 +102,22 @@ def print_qrcode(s):
     f.seek(0)
     print(f.read())
 
-def start_https_server(interface, port, webroot):
-    parser = argparse.ArgumentParser(prog="SimpleHTTPSServer",
-        description="Start a listening HTTPS server.")
 
-    server_group = parser.add_argument_group('Basic Server Configuration',
-        '''Use the following parameters to apply basic server
-        configurations''')
-    server_group.add_argument('--interface', '-i', required=True,
-        help="Interface/IP address the server will bind to.")
-    server_group.add_argument('--port', '-p', default=443, type=int,
-        help="Port the server will listen on.")
-    server_group.add_argument('--webroot','-wr',
-        default='.',
-        help='Directory from which to serve files.')
-    server_group.add_argument('--enable-uploads','-eu',
-        action='store_true',
-        help='Enable file uploads via POST request')
-    server_group.add_argument('--disable-caching','-dc',
-        action='store_true',
-        help='Disable caching')
-
-    cert_group = parser.add_argument_group('x509 Certificate Configuration',
-        '''Use the following parameters to configure the HTTPS certificate
-        ''')
-    cert_group.add_argument('--certfile', '-c', default=None,
-        help="Certificate file for the server to use")
-    cert_group.add_argument('--keyfile', '-k', default=None,
-        help="Keyfile corresponding to certificate file")
-    
-    # certificate defaults
-     # used for certificate generation
-    certfile = '/tmp/self_signed.crt'
-    keyfile = '/tmp/self_signed.key'
-    cert_group.add_argument('--generate', '-g', default=None, action='store_true',
-        help="Generate and use a self-signed certificate in /tmp.")
-    cert_group.add_argument('--gcertfile', default=certfile,
-        help="Path to certificate file to be generated.")
-    cert_group.add_argument('--gkeyfile', default=keyfile,
-        help="Path to keyfile to be generated.")
-
-    auth_arg_group = parser.add_argument_group('Basic Authentication',
-        '''Use the following parameters to configure the server to use
-        basic authentication.
-        ''')
-    auth_arg_group.add_argument('--basic-username','-bu',
-        help='Username for basic authentication')
-    auth_arg_group.add_argument('--basic-password','-bp',
-        help='Password for basic authentication')
-
-    # obfuscation
-    obf_group = parser.add_argument_group('Obfuscation',
-        '''Configure the server to implement file obfuscation.
-         JavaScript is injected into the browser to handle
-         obfuscation at the client.
-        ''')
-    obf_group.add_argument('--enable-b64',
-        help='Enable double base 64 obfuscation of files.',
-        action='store_true')
-
-    args = parser.parse_args(["-g", "-i", interface, "-p", f"{port}", "-wr", webroot])
-    #args = parser.parse_args(f"-g -i {interface} -p {port} -wr {webroot}")
-
-    # handle basic auth credentials
-    if args.basic_username and not args.basic_password or (
-        args.basic_password and not args.basic_username):
-        raise ArgumentError("""Script requires a username and password for
-        basic authentication""")
-
-    # assure certificate arguments are as expected
-    if not args.certfile and not args.keyfile and not args.generate:
-        raise ArgumentError(
-        """Script requires either --generate to be set or both of arguments
-        for the --certfile and --keyfile parameters.""")
-    elif args.certfile and args.keyfile and args.generate:
-        raise ArgumentError(
-        """Script requires either arguments for the certfile and keyfile
-        parameters or, alternatively, the generate argument; not both""")
-
-    if args.webroot != '.':
-
-        p = Path(args.webroot)
-
-        if not p.exists():
-            raise ArgumentError('''Path to webroot does not exist
-            ''')
-        elif not p.is_dir():
-            raise ArgumentError('''Webroot is not a directory
-            ''')
-
-    print()
-    print(parser.prog)
-    print()
-    sprint("Arguments validated successfully")
-
-
-    if args.generate:
-        generate_certificate(certfile, keyfile)
-        args.certfile = certfile
-        args.keyfile = keyfile
-
-    run_server(**args.__dict__)
+def start_https_server(interface, port, webroot, certfile=None, keyfile=None):
+    logging.info(f"Starting server on interface '{interface}' port '{port}' with webroot '{webroot} using certfile '{certfile}' and keyfile '{keyfile}'")
+    settings = dict(
+        interface=interface,
+        port=port,
+        webroot=webroot,
+        enable_uploads=False,
+        disable_caching=False,
+        certfile=certfile,
+        keyfile=keyfile,
+        generate=False,
+        basic_username=None,
+        basic_password=None,
+        enable_b64=False)
+    server.run_server(**settings)
 
 
 
